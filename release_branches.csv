@@ -1,0 +1,7 @@
+BuildNumber,Deployment Status,Deployment Date,Deployment Duration(minits),Deployment Trigger By,Deployment application,Environment,Previous Deployed Version,param_ICM_Ticket,param_WorkerSize,param_Workers,param_market_name,param_runtime_with_java
+716,SUCCESS,29-10-2025 02.09,01:24.0,satheesh.jamma@cwc.com,com.lla:account-biz:2.2.2:B1-1266ed6,prod,"	2.0.0",ICM-14584,0.1,1,lla-cloudhub,4.9-java17
+715,SUCCESS,29-10-2025 02.07,01:28.4,satheesh.jamma@cwc.com,com.lla:account-biz:2.2.3:B7-36e8874,prod,"	5.0.0",ICM-14584,0.1,1,lla-cloudhub,4.9-java17
+714,SUCCESS,24-10-2025 03.17,01:27.9,satheesh.jamma@cwc.com,com.lla:ecom-demo:3.3.2:B1-3739bc3,prod,"	NA",ICM-14514,0.1,1,lla-cloudhub,4.9-java17
+716,SUCCESS,29-10-2025 02.09,01:24.0,satheesh.jamma@cwc.com,com.lla:ecom-ux:1.1.3:B1-1266ed6,prod,"	2.0.0",ICM-14584,0.1,1,lla-cloudhub,4.9-java17
+715,SUCCESS,29-10-2025 02.07,01:28.4,satheesh.jamma@cwc.com,com.lla:ecom-ux:3.0.1:B7-36e8874,prod,"	2.0.0",ICM-14584,0.1,1,lla-cloudhub,4.9-java17
+714,SUCCESS,24-10-2025 03.17,01:27.9,satheesh.jamma@cwc.com,com.lla:ecom-ux:3.0.2:B1-3739bc3,prod,"	NA",ICM-14514,0.1,1,lla-cloudhub,4.9-java17
