@@ -1,0 +1,175 @@
+#!/bin/bash
+
+# ==============================
+# CONFIGURATION
+# ==============================
+GITHUB_USER="devisree123"
+GITHUB_TOKEN="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"
+CSV_FILE="release_branches.csv"
+TAGGER_NAME="DeviSree"
+TAGGER_EMAIL="devi.aaatla@gmail.com"
+
+# ==============================
+# FUNCTION: Compare Versions
+# ==============================
+version_compare() {
+    IFS='.' read -ra ver1 <<< "$1"
+    IFS='.' read -ra ver2 <<< "$2"
+    for ((i=0; i<${#ver1[@]} || i<${#ver2[@]}; i++)); do
+        if [[ ${ver1[i]:-0} -gt ${ver2[i]:-0} ]]; then
+            echo 1; return
+        elif [[ ${ver1[i]:-0} -lt ${ver2[i]:-0} ]]; then
+            echo -1; return
+        fi
+    done
+    echo 0
+}
+
+# ==============================
+# FUNCTION: Show Duration
+# ==============================
+show_duration() {
+    row_end=$(date +%s)
+    duration_sec=$((row_end - row_start))
+    minutes=$((duration_sec / 60))
+    seconds=$((duration_sec % 60))
+    echo "Time taken for this row: ${minutes} min ${seconds} sec"
+    echo "----------------------------------------"
+}
+
+# ==============================
+# FUNCTION: Process Each Row
+# ==============================
+process_row() {
+    row_start=$(date +%s)
+
+    IFS=':' read -r group_id artifact_id version build_id <<< "$application_deployed"
+    branch="release/$version"
+    tag_name="tag-release/$version"
+    echo "Processing artifact: $artifact_id → Version: $version → Branch: $branch → Tag: $tag_name"
+
+    # Handle NA or empty previous version
+    if [[ -z "$previous_version" || "${previous_version,,}" == "na" ]]; then
+        echo "Previous version is NA or empty. Proceeding with tagging and branch deletion."
+    else
+        comparison=$(version_compare "$version" "$previous_version")
+        if [[ "$comparison" -eq -1 ]]; then
+            echo "Rollback detected: Previous version ($previous_version) is greater than current version ($version)."
+            show_duration
+            return
+        fi
+    fi
+
+    repo_candidates=("${artifact_id}-4.2" "${artifact_id}-4.6" "${artifact_id}")
+    repo_found=""
+
+    for candidate in "${repo_candidates[@]}"; do
+        echo "Checking if repository exists: $candidate"
+        repo_check=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_USER/$candidate")
+
+        if [[ "$repo_check" == "200" ]]; then
+            repo_found="$candidate"
+            echo "Found matching repository: $repo_found"
+            break
+        fi
+    done
+
+    if [[ -z "$repo_found" ]]; then
+        echo "No matching repository found for $artifact_id. Skipping..."
+        show_duration
+        return
+    fi
+
+    # Check if tag already exists
+    tag_exists=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+        "https://api.github.com/repos/$GITHUB_USER/$repo_found/git/refs/tags/$tag_name")
+
+    if echo "$tag_exists" | grep -q '"ref":'; then
+        echo "Tag $tag_name already exists in $repo_found. Skipping..."
+        show_duration
+        return
+    fi
+
+    # Get latest commit SHA from branch
+    sha=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+        "https://api.github.com/repos/$GITHUB_USER/$repo_found/commits/$branch" | jq -r '.sha')
+
+    if [[ "$sha" == "null" || -z "$sha" ]]; then
+        echo "Branch $branch not found in $repo_found. Skipping..."
+        show_duration
+        return
+    fi
+
+    # Create tag object
+    tag_response=$(curl -s -X POST \
+        -H "Authorization: token $GITHUB_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"tag\": \"$tag_name\",
+            \"message\": \"Tagging release $version\",
+            \"object\": \"$sha\",
+            \"type\": \"commit\",
+            \"tagger\": {
+                \"name\": \"$TAGGER_NAME\",
+                \"email\": \"$TAGGER_EMAIL\",
+                \"date\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"
+            }
+        }" \
+        "https://api.github.com/repos/$GITHUB_USER/$repo_found/git/tags")
+
+    tag_sha=$(echo "$tag_response" | jq -r '.sha')
+    if [[ "$tag_sha" == "null" || -z "$tag_sha" ]]; then
+        echo "Failed to create tag object for $branch in $repo_found."
+        echo "Response: $tag_response"
+        show_duration
+        return
+    fi
+
+    # Create tag reference
+    ref_response=$(curl -s -X POST \
+        -H "Authorization: token $GITHUB_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"ref\": \"refs/tags/$tag_name\",
+            \"sha\": \"$tag_sha\"
+        }" \
+        "https://api.github.com/repos/$GITHUB_USER/$repo_found/git/refs")
+
+    if echo "$ref_response" | grep -q '"ref":'; then
+        echo "Tag $tag_name created successfully in $repo_found."
+    else
+        echo "Failed to create tag reference for $tag_name in $repo_found."
+        echo "Response: $ref_response"
+        show_duration
+        return
+    fi
+
+    # Delete branch
+    echo "Deleting branch $branch from $repo_found ..."
+    delete_response=$(curl -s -X DELETE \
+        -H "Authorization: token $GITHUB_TOKEN" \
+        "https://api.github.com/repos/$GITHUB_USER/$repo_found/git/refs/heads/$branch")
+
+    if [[ -z "$delete_response" ]]; then
+        echo "Branch $branch deleted successfully from $repo_found."
+    else
+        echo "Failed to delete branch $branch from $repo_found."
+        echo "Response: $delete_response"
+    fi
+
+    show_duration
+}
+
+# ==============================
+# MAIN LOOP
+# ==============================
+if [[ ! -f "$CSV_FILE" ]]; then
+    echo "CSV file $CSV_FILE not found!"
+    exit 1
+fi
+
+tail -n +2 "$CSV_FILE" | while IFS=',' read -r build_number deployment_status deployment_date deployment_duration deployment_trigger_by application_deployed environment previous_version param_icm_ticket param_worker_size param_workers param_market_name param_runtime_with_java; do
+    process_row
+done
